@@ -15,6 +15,8 @@ type Page struct {
 
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 
+var pageLink = regexp.MustCompile(`\[.+\]`)
+
 var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html"))
 
 func (p *Page) save() error {
@@ -31,11 +33,21 @@ func loadPage(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
-func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
+func renderTemplate(w http.ResponseWriter, tmpl string, p map[string]interface{}) {
 	err := templates.ExecuteTemplate(w, tmpl+".html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func linkify(body string) template.HTML {
+	body = "<p>" + template.HTMLEscapeString(body) + "</p>"
+	body = pageLink.ReplaceAllStringFunc(body, func(match string) string {
+		match = match[1 : len(match)-1]
+		return "<a href='/view/" + match + "'>" + match + "</a>"
+	})
+
+	return template.HTML(body)
 }
 
 func getTitle(w http.ResponseWriter, r *http.Request) (string, error) {
@@ -53,7 +65,10 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
 		return
 	}
-	renderTemplate(w, "view", p)
+	renderTemplate(w, "view", map[string]interface{}{
+		"Title": p.Title,
+		"Body":  linkify(string(p.Body)),
+	})
 }
 
 func editHandler(w http.ResponseWriter, r *http.Request, title string) {
@@ -61,7 +76,10 @@ func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 	if err != nil {
 		p = &Page{Title: title}
 	}
-	renderTemplate(w, "edit", p)
+	renderTemplate(w, "edit", map[string]interface{}{
+		"Title": p.Title,
+		"Body":  string(p.Body),
+	})
 }
 
 func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
